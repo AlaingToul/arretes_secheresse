@@ -14,8 +14,9 @@ import os
 import datetime as dt
 import requests
 import geopandas as gpd
-import leafmap.foliumap as leafmap
+import folium
 import streamlit as st
+
 from streamlit_folium import st_folium
 
 # dossier racine où se trouvent les données récupérées et à présenter
@@ -73,6 +74,7 @@ def construire_carte(itineraire, zones_arrete):
     Returns:
         map: instance de carte folium
     """
+
     # copie locale
     czones_arrete = gpd.GeoDataFrame(zones_arrete)
 
@@ -82,36 +84,56 @@ def construire_carte(itineraire, zones_arrete):
     czones_arrete["couleur"] = czones_arrete["niveauGravite"].map(dict(zip(niveaux,couleurs)))
 
     # carte centrée sur ce point choisi manuellement
-    carte = leafmap.Map(
-        layers_control=True,
-        draw_control=False,
-        measure_control=False,
-        fullscreen_control=False,
-        search_control=False,
-    )
+    centre = [46.463,2.661]
+    # limites : celle des itinéraires
+    bounds =itineraire.total_bounds
 
-    # fond carto
-    carte.add_basemap("OpenStreetMap")
+    #carte = folium.Map(
+    #    location=centre,
+    #    zoom_start=6,
+    #    tiles="OpenStreetMap",
+    #)
+    carte = czones_arrete.explore(
+        column='niveauGravite',
+        tooltip='niveauGravite',
+        categorical=True,
+        categories=niveaux,
+        k=len(niveaux),
+        cmap=couleurs,
+        popup=True,
+        legend=True,
+        legend_kwds={"colorbar": False},
+        tiles="OpenStreetMap",
+        #location=centre,
+        #zoom_start=6,
+        min_lat=41.3,
+        min_lon=-5.2,
+        max_lat=51.25,
+        max_lon=9.65,
+        max_bounds=True,
+        )
 
-    # ajout de la couche itinéraire
-    carte.add_gdf(itineraire, layer_name="Itinéraire COP",
-                   style_function=lambda x: {"color": "#0000ff", "weight": 2},
-                   zoom_to_layer=False)
+     # ajout de la couche itinéraire
+    #folium.GeoJson(itineraire, 
+    #               name="Itinéraire COP",
+    #               style_function=lambda x: {"color": "#0000ff", "weight": 2},
+    #               ).add_to(carte)
 
     # ajout de la couche zones d'arrêtés avec le code couleur de l'attribut "couleur"
-    carte.add_gdf(czones_arrete, layer_name="Zones d'arrêtés sécheresse",
-                   style_function=lambda x: {"color": x["properties"]["couleur"], "weight": 2},
-                   zoom_to_layer=False)
+    #folium.GeoJson(czones_arrete,
+    #               name="Zones d'arrêtés sécheresse",
+    #               style_function=lambda x: {"color": x["properties"]["couleur"], "weight": 2},
+    #               ).add_to(carte)
 
     # légende niveau de gravité
-    carte.add_legend('Niveaux de gravité', colors=couleurs, labels=niveaux)
+    #carte.add_legend('Niveaux de gravité', colors=couleurs, labels=niveaux)
 
     # ajout du titre de la carte
-    title_html = f'''
-       <h3 align="center" style="font-size:20px"><b>Zones d'arrêtés sécheresse</b>
-       en date du {dt.date.today().strftime("%d/%m/%Y")}</h3>
-                '''
-    carte.add_title(title_html)
+    #title_html = f'''
+    #   <h3 align="center" style="font-size:20px"><b>Zones d'arrêtés sécheresse</b>
+    #   en date du {dt.date.today().strftime("%d/%m/%Y")}</h3>
+    #            '''
+    #carte.add_title(title_html)
 
     # fin
     return carte
@@ -141,17 +163,9 @@ def main():
 
     # visualisation
 
-    # initialisation
-    # if "center" not in st.session_state:
-    #     st.session_state["center"] = [46.463,2.661]
-    # if "zoom" not in st.session_state:
-    #     st.session_state["zoom"] = 6
-
-    carte_data = carte.to_streamlit(
+    carte_data = st_folium(carte,
         height=700,
         width=700,
-        scrolling=True,
-        bidirectional=True,
     )
 
 #-------------------------------------------------------------------------------

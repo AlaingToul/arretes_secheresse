@@ -1,6 +1,5 @@
-altair=4
-protobuf=4
-streamlit
-folium
+altair<5
+protobuf<5
+streamlit-folium
+pandas
 geopandas
-requests
