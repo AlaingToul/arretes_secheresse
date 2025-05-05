@@ -88,12 +88,16 @@ def construire_carte(itineraire, zones_arrete):
     # limites : celle des itinéraires
     bounds =itineraire.total_bounds
 
-    #carte = folium.Map(
-    #    location=centre,
-    #    zoom_start=6,
-    #    tiles="OpenStreetMap",
-    #)
-    carte = czones_arrete.explore(
+    carte = folium.Map(
+        location=centre,
+        tiles="OpenStreetMap",
+    )
+
+    carte.fit_bounds([[bounds[1],bounds[0]],
+                      [bounds[3],bounds[2]]])
+
+    # ajout des zones d'arrêté avec contrôle de la légende
+    czones_arrete.explore(m=carte,
         column='niveauGravite',
         tooltip='niveauGravite',
         categorical=True,
@@ -102,38 +106,22 @@ def construire_carte(itineraire, zones_arrete):
         cmap=couleurs,
         popup=True,
         legend=True,
-        legend_kwds={"colorbar": False},
-        tiles="OpenStreetMap",
-        #location=centre,
-        #zoom_start=6,
-        min_lat=41.3,
-        min_lon=-5.2,
-        max_lat=51.25,
-        max_lon=9.65,
-        max_bounds=True,
+        legend_kwds={"caption":"Niveau de gravité"},
+        map_kwds={'name':"Zones d'arrêtés sécheresse"},
         )
 
-     # ajout de la couche itinéraire
-    #folium.GeoJson(itineraire, 
-    #               name="Itinéraire COP",
-    #               style_function=lambda x: {"color": "#0000ff", "weight": 2},
-    #               ).add_to(carte)
-
-    # ajout de la couche zones d'arrêtés avec le code couleur de l'attribut "couleur"
-    #folium.GeoJson(czones_arrete,
-    #               name="Zones d'arrêtés sécheresse",
-    #               style_function=lambda x: {"color": x["properties"]["couleur"], "weight": 2},
-    #               ).add_to(carte)
-
-    # légende niveau de gravité
-    #carte.add_legend('Niveaux de gravité', colors=couleurs, labels=niveaux)
+    # ajout de la couche itinéraire
+    folium.GeoJson(itineraire,
+                  name="Itinéraire COP",
+                  style_function=lambda x: {"color": "#0000ff", "weight": 2},
+                  ).add_to(carte)
 
     # ajout du titre de la carte
-    #title_html = f'''
-    #   <h3 align="center" style="font-size:20px"><b>Zones d'arrêtés sécheresse</b>
-    #   en date du {dt.date.today().strftime("%d/%m/%Y")}</h3>
-    #            '''
-    #carte.add_title(title_html)
+    title_html = f'''
+      <h3 align="center" style="font-size:20px"><b>Zones d'arrêtés sécheresse</b>
+      en date du {dt.date.today().strftime("%d/%m/%Y")}</h3>
+               '''
+    carte.get_root().html.add_child(folium.Element(title_html))
 
     # fin
     return carte
@@ -163,7 +151,7 @@ def main():
 
     # visualisation
 
-    carte_data = st_folium(carte,
+    st_folium(carte,
         height=700,
         width=700,
     )

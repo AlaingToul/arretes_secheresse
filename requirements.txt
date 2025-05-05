@@ -1,5 +1,6 @@
 altair<5
 protobuf<5
+mapclassify
 streamlit-folium
 pandas
 geopandas
