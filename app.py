@@ -229,7 +229,7 @@ def construire_carte(itineraire, zones_arrete):
         cmap=couleurs,
         popup=True,
         legend=False,
-        map_kwds={'name':"Zones d'arrêtés sécheresse"},
+        name= "Zones d'arrêtés sécheresse",
         )
 
     # légende "à la main" issue de la fonction d'explore,
