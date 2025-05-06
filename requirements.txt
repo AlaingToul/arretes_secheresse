@@ -2,6 +2,7 @@ altair<5
 protobuf<5
 branca
 mapclassify
+matplotlib
 streamlit-folium
 pandas
 geopandas
