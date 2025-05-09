@@ -11,8 +11,13 @@
 
 import io
 import os
+import ast
+import json
 import datetime as dt
+import dateutil
+import dateutil.relativedelta
 import requests
+import pandas as pd
 import geopandas as gpd
 import folium
 import streamlit as st
@@ -45,6 +50,14 @@ def get_zones_secheresse():
 
     # on ne garde que le type 'SUP'
     zones_arretes = zones_arretes[zones_arretes["type"] == "SUP"]
+
+    # gestion du code de département des zones d'arrêtés
+    zones_arretes['insee_dept'] = zones_arretes['departement'].apply(lambda x: json.loads(x)['code'])
+
+    # filtre pour ne conserver que l'affichage des départements de métropole (longueur de code dept < 3)
+    #zones_arretes = zones_arretes.where(zones_arretes["insee_dept"].apply(lambda x:len(x)<3))
+    #zones_arretes = zones_arretes.dropna(axis=0, subset='insee_dept')
+
     # fin
     return zones_arretes
 
@@ -63,6 +76,30 @@ def lire_geopandas(fic_couche):
     """
     gdf = gpd.read_file(fic_couche)
     return gdf
+
+#-------------------------------------------------------------------------------
+
+@st.cache_data
+def get_arretes():
+    """Requête de récupération des arrêtés de restriction archivés
+
+    Returns:
+        DataFrame: tableau des arrêtés récupérés
+    """
+    # url des archives des arrêtés
+    url_arretes = "https://www.data.gouv.fr/fr/datasets/r/f425cfa6-ccd1-438e-bb03-9d90ab527851"
+
+    # requête du fichier (ATTENTION, vérification certificat SSL désactivée)
+    rep = requests.get(url_arretes, verify=False)
+
+    # chargement des données dans un dataframe
+    fio = io.BytesIO(rep.content)
+
+    # avec analyse des dates sur 3 colonnes
+    df_arretes = pd.read_csv(fio,sep=',')
+    df_arretes = df_arretes.dropna(axis=0,how='any', subset='date_fin')
+    # fin
+    return df_arretes
 
 #-------------------------------------------------------------------------------
 
@@ -259,34 +296,326 @@ def construire_carte(itineraire, zones_arrete):
     return carte
 
 #-------------------------------------------------------------------------------
+
+def safe_literal_eval(value):
+    """Encapsulation de la fonction ast.literal_eval pour convertir la représentation en str
+    d'une liste de valeurs ou une seule valeur en liste
+
+    Args:
+        value (str): valeur à convertir, supposée de la forme "[v1,v2,...]" ou simplement "v1"
+
+    Returns:
+        list: liste contenant les données extraites du paramètre d'entrée
+    """
+    try:
+        # Essayer de convertir en liste
+        return ast.literal_eval(value)
+    except (ValueError, SyntaxError):
+        # Si échec, retourner une liste avec la valeur unique
+        return [value]
+
+#-------------------------------------------------------------------------------
+
+def calculer_dept_arretes_date(df_arretes, date_compar, niveaux):
+    """Calcul du nombre de départements ayant des arrêtés de restriction en eau superficielle
+    en date passée en paramètre et pour les niveaux parmi la liste passée en paramètre.
+
+    Args:
+        df_arretes (DataFrame): archives des arrêtés à analyser
+        date_compar (str): date de rechercher des arrêtés au format iso (yyyy-mm-dd)
+        niveaux (list): liste des niveaux à conserver parmi les niveaux de gravité des arrêtés
+    """
+
+    # initialisation
+    resultat = 0
+
+    # filtre dates : l'arrêté doit être valide au moment de la date de recherche
+    loc_df_arretes = df_arretes[df_arretes['date_debut'] < date_compar]
+    if not loc_df_arretes.empty:
+        loc_df_arretes = loc_df_arretes[loc_df_arretes['date_fin'] > date_compar]
+
+    # préparation pour séparer les listes de zones d'arrêtés concernées
+    if not loc_df_arretes.empty:
+        loc_df_arretes["zones_alerte.niveau_gravite"] = \
+            loc_df_arretes["zones_alerte.niveau_gravite"].apply(safe_literal_eval)
+        loc_df_arretes['zones_alerte.type'] = \
+            loc_df_arretes["zones_alerte.type"].apply(safe_literal_eval)
+        # séparation des listes : en une entrée par valeur pour les deux colonnes à travailler
+        loc_df_arretes = \
+            loc_df_arretes.explode(['zones_alerte.niveau_gravite','zones_alerte.type'],
+                                   ignore_index=True)
+
+    # filtre zones_alerte.type : SUP pour les eaux superficielles
+    if not loc_df_arretes.empty:
+        loc_df_arretes = loc_df_arretes[loc_df_arretes['zones_alerte.type']=='SUP']
+
+    # non vigilance
+    if not loc_df_arretes.empty:
+        df_arretes_non_vigi = \
+            loc_df_arretes[loc_df_arretes["zones_alerte.niveau_gravite"].isin(niveaux)]
+
+        # nombre de départements au delà de la vigilance
+        if not df_arretes_non_vigi.empty:
+            resultat = len(df_arretes_non_vigi['departement'].unique())
+    # fin
+    return resultat
+
+#-------------------------------------------------------------------------------
+
+def calculer_dept_arretes_an_passe(df_arretes):
+    """Calcul du nombre de départements au delà de vigilance en année n-1
+    au début du même mois que l'année courante.
+
+    Args:
+        df_arretes (DataFrame): archives des arrêtés à analyser
+    """
+    # initialisation
+    resultat = 0
+    # Détermination de l'année passée, début du même mois
+    date_today = dt.date.today()
+    an_moins_1 = date_today.year-1
+    date_compar = dt.date(an_moins_1,date_today.month,1).isoformat()
+    # recherche sur tous les niveaux sauf vigilance
+    niveaux = ["alerte",  "alerte renforcée", "crise"]
+    resultat = calculer_dept_arretes_date(df_arretes, date_compar, niveaux)
+    # fin
+    return resultat
+
+#-------------------------------------------------------------------------------
+
+def calculer_dept_zone_restrict(zones_arretes):
+    """Calcul du nombre de départements des zones d'arrêtés de restriction hors niveau
+    de vigilance
+
+    Args:
+        zones_arretes (geoDataFrame): couche des zones d'arrêtés de restriction
+
+    Returns:
+        int: nombre de département correspondant au critère recherché
+    """
+    # initialisation
+    resultat = 0
+    # zones d'arrêtés de restriction au delà de la vigilance
+    zones_non_vigilance = zones_arretes[zones_arretes['niveauGravite'] != "vigilance"]
+
+    # les départements correspondant à ces zones d'arrêtés
+    if not zones_non_vigilance.empty:
+        dept_res = zones_non_vigilance['insee_dept'].unique()
+        # nb de départements trouvés
+        resultat = len(dept_res)
+    # fin
+    return resultat
+
+#-------------------------------------------------------------------------------
+
+def calculer_dept_zone_vnf_niveau(zones_arretes, dept_iti, niveau):
+    """Calcul du nombre de départements du réseau VNF ayant des zones
+    d'arrêté au niveau de gravité recherché.
+
+    Args:
+        zones_arretes (geoDataFrame): couche des zones d'arrêté de restriction à analyser
+        dept_iti (geoDataFrame): couche des départements du réseau VNF
+        (paramètre structurel fixé n'évoluant pas dans le temps)
+        niveau (str): chaîne de caractère indiquant le niveau de gravité à analyser.
+        Attention aux fautes de frappe...c'est du texte !
+
+    Returns:
+        (int,str): (nombre, noms) des départements du réseau VNF ayant une zone de restriction dans
+        le niveau recherché
+    """
+    # initialisation :
+    resultat = (0,'')
+
+    # zones en niveau spécifique sur le réseau VNF
+    zones_filtres = zones_arretes[zones_arretes['niveauGravite'] == niveau]
+
+    # les départements correspondant à ces zones d'arrêtés
+    if not zones_filtres.empty:
+        dept_filtre = zones_filtres['insee_dept'].unique()
+
+        # application du filtre
+        dept_resultat = dept_iti[dept_iti["insee_dep"].isin(dept_filtre)]
+
+        # résultat en nb de départements
+        if not dept_resultat.empty:
+            resultat = (len(dept_resultat), ", ".join(dept_resultat["nom"]))
+    # fin
+    return resultat
+
+#-------------------------------------------------------------------------------
+
+def construire_table_indic(df_arretes, zones_arretes, dept_iti):
+    r"""Construction d'un dataframe contenant les indicateurs de nombre de
+    départements en restriction à date donnée selon plusieurs critères.
+
+    Lignes des moments du dataframe résultat :
+    - 'annee_courante' : indicateurs à la date au moment du lancement du calcul
+    - 'annee_precedente' : indicateurs au 1er du mois de l'année précédente de la date du calcul
+    - 'mois_precedent' : indicateurs au 1er du mois précédent de la date du calcul
+
+    Colonnes du dataframe résultat :
+    - 'dept_fr' : nombre de départements en restriction au delà du niveau vigilance
+    - 'dept_vnf_crise_code' : nombre de départements du réseau VNF en crise
+    - 'dept_vnf_crise_nom' : liste des noms des départements du réseau VNF en crise
+                            /!\ renseigné uniquement pour l'année courante
+    - 'dept_vnf_ar' : nombre des départements du réseau VNF en alerte renforcée
+
+    Args:
+        df_arretes (geoDataFrame): couche des arrêtés de restriction
+        zones_arretes (geoDataFrame): couche des zones des arrêtés de restriction en cours
+        dept_iti (geoDataFrame): couche des départements du réseau VNF
+
+    Returns:
+        DataFrame: dataframe contenant le résultat avec une ligne le moment choisi d'analyse
+        et en colonnes les critères choisis
+    """
+    # initialisation
+    df_resultat = pd.DataFrame(columns=['dept_fr',
+                                        'dept_vnf_crise_code',
+                                        'dept_vnf_crise_nom',
+                                        'dept_vnf_ar']
+                               )
+    # Année courante
+
+    # nombre de départements n'étant pas en niveau vigilance
+    nb_dept_r_z = calculer_dept_zone_restrict(zones_arretes)
+    # nombre de départements du réseau VNF en crise et alerte renforcée
+    nb_dept_vnf_crise = calculer_dept_zone_vnf_niveau(zones_arretes, dept_iti, 'crise')
+    nb_dept_vnf_ar = calculer_dept_zone_vnf_niveau(zones_arretes, dept_iti, 'alerte renforcee')
+
+    # ajout au résultat
+    df_resultat.loc['annee_courante'] = [nb_dept_r_z,
+                                         nb_dept_vnf_crise[0],
+                                         nb_dept_vnf_crise[1],
+                                         nb_dept_vnf_ar[0]
+                                         ]
+
+    # Année précédente
+
+    # nombre de départements français avec des arrêtés en début de mois de l'année passée
+    nb_dept_an_passe = calculer_dept_arretes_an_passe(df_arretes)
+
+    # ajout au résultat
+    df_resultat.loc['annee_precedente'] = [nb_dept_an_passe,
+                                         0,
+                                         '',
+                                         0
+                                         ]
+
+    # 1er jour du mois précédent (on fixe day=1 et on retranche 1 mois)
+    date_compar = dt.date.today() + dateutil.relativedelta.relativedelta(months=-1, day=1)
+    # recherche sur tous les niveaux sauf vigilance
+    niveaux = ["vigilance","alerte",  "alerte renforcée", "crise"]
+    nb_dept_r_z_mois_prec = calculer_dept_arretes_date(df_arretes, date_compar.isoformat(), niveaux)
+    niveaux = ["crise"]
+    nb_dept_vnf_crise_mois_prec = calculer_dept_arretes_date(df_arretes, date_compar.isoformat(), niveaux)
+    niveaux = ["alerte renforcée"]
+    nb_dept_vnf_ar_mois_prec = calculer_dept_arretes_date(df_arretes, date_compar.isoformat(), niveaux)
+
+    # ajout au résultat
+    df_resultat.loc['mois_precedent'] = [nb_dept_r_z_mois_prec,
+                                         nb_dept_vnf_crise_mois_prec,
+                                         '',
+                                         nb_dept_vnf_ar_mois_prec
+                                         ]
+    # fin
+    return df_resultat
+
+#-------------------------------------------------------------------------------
+
+def inserer_indic_dept(table_indic):
+    r"""Représentation des données du dataframe passé en paramètre.
+
+    Lignes des moments du dataframe  :
+    - 'annee_courante' : indicateurs à la date au moment du lancement du calcul
+    - 'annee_precedente' : indicateurs au 1er du mois de l'année précédente de la date du calcul
+    - 'mois_precedent' : indicateurs au 1er du mois précédent de la date du calcul
+
+    Colonnes du dataframe  :
+    - 'dept_fr' : nombre de départements en restriction au delà du niveau vigilance
+    - 'dept_vnf_crise_code' : nombre de départements du réseau VNF en crise
+    - 'dept_vnf_crise_nom' : liste des noms des départements du réseau VNF en crise
+                            /!\ renseigné uniquement pour l'année courante
+    - 'dept_vnf_ar' : nombre des départements du réseau VNF en alerte renforcée
+
+    Args:
+        table_indic (DataFrame): contient les indicateurs selon la strucure indiquée précédemment
+    """
+
+    # ajout du nombre de colonnes et lignes
+    ligne1 = st.columns(3)
+    ligne2 = st.columns(3)
+    # remplissage
+    indic_annee_courante = table_indic.loc['annee_courante']
+    indic_annee_prec = table_indic.loc['annee_precedente']
+    ligne1[0].write(f"{indic_annee_courante['dept_fr']} \ndépartements en France \navec des mesures\
+                     de restrictions \ndes usages au-delà de la vigilance")
+    ligne1[0].write(f"{indic_annee_prec['dept_fr']} en 2024")
+
+    ligne1[1].write(f"{indic_annee_courante['dept_vnf_crise_code']} \ndépartements en crise sur\
+                    le réseau de VNF : {indic_annee_courante['dept_vnf_crise_nom']}")
+
+    ligne1[2].write(f"{indic_annee_courante['dept_vnf_ar']} \ndépartements en alerte renforcée sur le réseau de VNF")
+
+    # 2e ligne
+    indic_mois_prec = table_indic.loc['mois_precedent']
+    ligne2[0].write(f"{indic_annee_courante['dept_fr'] - indic_mois_prec['dept_fr']} \ndépartements en arrêté par rapport au mois dernier")
+    ligne2[1].write(f"{indic_annee_courante['dept_vnf_crise_code'] - indic_mois_prec['dept_vnf_crise_code']}\
+                    \ndépartements en arrêté par rapport au mois dernier")
+    ligne2[2].write(f"{indic_annee_courante['dept_vnf_ar'] - indic_mois_prec['dept_vnf_ar']}\
+                    \ndépartements en arrêté par rapport au mois dernier")
+
+
+#-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 
 def main():
     """Fonction principale
     """
     # titre de page
-    st.set_page_config(page_title="Zones d'arrêtés sécheresse en vigueur")
+    st.set_page_config(layout='centered',
+                       page_title="Zones d'arrêtés sécheresse en vigueur")
     st.title("Arrêtés sécheresse en vigueur")
+
+    tab1,tab2 = st.tabs(["Carte des arrêtés", "Indicateurs des arrêtés"])
+    data_load_state = st.text('Chargement des données...')
 
     # itinéraires COP
     fic_couche = os.path.join(Racine,"Export_Itineraire_COP.gpkg")
     itineraire = lire_geopandas(fic_couche)
+    # départements réseau VNF
+    fic_couche = os.path.join(Racine,"departements_itineraires.gpkg")
+    dept_iti = lire_geopandas(fic_couche)
     # conversion du CRS en wgs 84
     itineraire = itineraire.to_crs("EPSG:4326")
-
+    dept_iti   = dept_iti.to_crs("EPSG:4326")
+    # zones des arrêtés
     zones_arretes = get_zones_secheresse()
     # conversion dans le même CRS que l'itinéraire
     zones_arretes = zones_arretes.to_crs(itineraire.crs)
 
+    # arrêtés archivés dans le temps
+    df_arretes = get_arretes()
+
+    data_load_state.text('Chargement des données...Terminé !')
+
+    # construction de la table des indicateurs à afficher
+    table_indic = construire_table_indic(df_arretes, zones_arretes, dept_iti)
+
     # création de la carte
+    data_load_state.text('Construction carte...')
     carte = construire_carte(itineraire, zones_arretes)
+    data_load_state.text('Construction carte...Terminé !')
 
     # visualisation
-
-    st_folium(carte,
-        height=700,
-        width=700,
-    )
+    with tab1:
+        st_folium(carte,
+            height=700,
+            width=700,
+        )
+    # insertion des indicateurs par département
+    with tab2:
+        inserer_indic_dept(table_indic)
 
 #-------------------------------------------------------------------------------
 
