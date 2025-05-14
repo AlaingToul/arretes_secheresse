@@ -55,8 +55,8 @@ def get_zones_secheresse():
     zones_arretes['insee_dept'] = zones_arretes['departement'].apply(lambda x: json.loads(x)['code'])
 
     # filtre pour ne conserver que l'affichage des départements de métropole (longueur de code dept < 3)
-    #zones_arretes = zones_arretes.where(zones_arretes["insee_dept"].apply(lambda x:len(x)<3))
-    #zones_arretes = zones_arretes.dropna(axis=0, subset='insee_dept')
+    zones_arretes = zones_arretes.where(zones_arretes["insee_dept"].apply(lambda x:len(x)<3))
+    zones_arretes = zones_arretes.dropna(axis=0, subset='insee_dept')
 
     # fin
     return zones_arretes
@@ -224,12 +224,13 @@ def _categorical_legend(m, title, categories, colors):
 
 #-------------------------------------------------------------------------------
 
-def construire_carte(itineraire, zones_arrete):
+def construire_carte(itineraire, zones_arrete, dept_iti):
     """construction de la carte folium basée sur les deux couches passées en paramètre
 
     Args:
         itineraire (GeoDataFrame): couche des itinéraires COP
         zones_arrete (GeoDataFrame): couche des zones de sécheresse à afficher
+        dept_iti (GeoDataFrame): couche des départements en lien avec le réseau de VNF
 
     Returns:
         map: instance de carte folium
@@ -256,10 +257,16 @@ def construire_carte(itineraire, zones_arrete):
     carte.fit_bounds([[bounds[1],bounds[0]],
                       [bounds[3],bounds[2]]])
 
+    # ajout de la couche départements
+    folium.GeoJson(dept_iti,
+                  name="Départements réseau VNF",
+                  style_function=lambda x: {"color": "#c0c0c0", "weight": 2},
+                  ).add_to(carte)
+
     # ajout des zones d'arrêté avec contrôle de la légende
     czones_arrete.explore(m=carte,
         column='niveauGravite',
-        tooltip='niveauGravite',
+        tooltip=['niveauGravite', 'departement'],
         categorical=True,
         categories=niveaux,
         k=len(niveaux),
@@ -458,7 +465,9 @@ def construire_table_indic(df_arretes, zones_arretes, dept_iti):
     - 'dept_vnf_crise_code' : nombre de départements du réseau VNF en crise
     - 'dept_vnf_crise_nom' : liste des noms des départements du réseau VNF en crise
                             /!\ renseigné uniquement pour l'année courante
-    - 'dept_vnf_ar' : nombre des départements du réseau VNF en alerte renforcée
+    - 'dept_vnf_ar_code' : nombre des départements du réseau VNF en alerte renforcée
+    - 'dept_vnf_ar_nom' : liste des noms des départements du réseau VNF en alerte renforcée
+                            /!\ renseigné uniquement pour l'année courante
 
     Args:
         df_arretes (geoDataFrame): couche des arrêtés de restriction
@@ -473,7 +482,8 @@ def construire_table_indic(df_arretes, zones_arretes, dept_iti):
     df_resultat = pd.DataFrame(columns=['dept_fr',
                                         'dept_vnf_crise_code',
                                         'dept_vnf_crise_nom',
-                                        'dept_vnf_ar']
+                                        'dept_vnf_ar_code',
+                                        'dept_vnf_ar_nom']
                                )
     # Année courante
 
@@ -487,7 +497,8 @@ def construire_table_indic(df_arretes, zones_arretes, dept_iti):
     df_resultat.loc['annee_courante'] = [nb_dept_r_z,
                                          nb_dept_vnf_crise[0],
                                          nb_dept_vnf_crise[1],
-                                         nb_dept_vnf_ar[0]
+                                         nb_dept_vnf_ar[0],
+                                         nb_dept_vnf_ar[1]
                                          ]
 
     # Année précédente
@@ -499,7 +510,8 @@ def construire_table_indic(df_arretes, zones_arretes, dept_iti):
     df_resultat.loc['annee_precedente'] = [nb_dept_an_passe,
                                          0,
                                          '',
-                                         0
+                                         0,
+                                         ''
                                          ]
 
     # 1er jour du mois précédent (on fixe day=1 et on retranche 1 mois)
@@ -516,7 +528,8 @@ def construire_table_indic(df_arretes, zones_arretes, dept_iti):
     df_resultat.loc['mois_precedent'] = [nb_dept_r_z_mois_prec,
                                          nb_dept_vnf_crise_mois_prec,
                                          '',
-                                         nb_dept_vnf_ar_mois_prec
+                                         nb_dept_vnf_ar_mois_prec,
+                                         ''
                                          ]
     # fin
     return df_resultat
@@ -536,34 +549,73 @@ def inserer_indic_dept(table_indic):
     - 'dept_vnf_crise_code' : nombre de départements du réseau VNF en crise
     - 'dept_vnf_crise_nom' : liste des noms des départements du réseau VNF en crise
                             /!\ renseigné uniquement pour l'année courante
-    - 'dept_vnf_ar' : nombre des départements du réseau VNF en alerte renforcée
+    - 'dept_vnf_ar_code' : nombre des départements du réseau VNF en alerte renforcée
+    - 'dept_vnf_ar_nom' : liste des noms des départements du réseau VNF en alerte renforcée
+                            /!\ renseigné uniquement pour l'année courante
 
     Args:
         table_indic (DataFrame): contient les indicateurs selon la strucure indiquée précédemment
     """
 
+    def _signe_devant(valeur):
+        signe=''
+        if valeur>0:
+            signe=r'\+ '
+        if valeur<0:
+            signe=r'\- '
+        return signe
+
+
     # ajout du nombre de colonnes et lignes
-    ligne1 = st.columns(3)
-    ligne2 = st.columns(3)
+    ligne1 = st.columns(3, border=True)
+    ligne2 = st.columns(3, border=True)
     # remplissage
     indic_annee_courante = table_indic.loc['annee_courante']
     indic_annee_prec = table_indic.loc['annee_precedente']
-    ligne1[0].write(f"{indic_annee_courante['dept_fr']} \ndépartements en France \navec des mesures\
-                     de restrictions \ndes usages au-delà de la vigilance")
-    ligne1[0].write(f"{indic_annee_prec['dept_fr']} en 2024")
+    ligne1[0].write(f"# :grey-background[{indic_annee_courante['dept_fr']}]")
+    ligne1[0].write(":grey-background[départements en France \navec des mesures\
+                     de restrictions \ndes usages au-delà de la vigilance]")
+    ligne1[0].write(f":grey-background[{indic_annee_prec['dept_fr']} en 2024]")
 
-    ligne1[1].write(f"{indic_annee_courante['dept_vnf_crise_code']} \ndépartements en crise sur\
-                    le réseau de VNF : {indic_annee_courante['dept_vnf_crise_nom']}")
+    ligne1[1].write(f"# :red-background[{indic_annee_courante['dept_vnf_crise_code']}]")
+    liste_dept = ''
+    if indic_annee_courante['dept_vnf_crise_code'] >0:
+        liste_dept = f": {indic_annee_courante['dept_vnf_crise_nom']}"
+    ligne1[1].write(f":red-background[départements en crise sur\
+                    le réseau de VNF {liste_dept}]")
 
-    ligne1[2].write(f"{indic_annee_courante['dept_vnf_ar']} \ndépartements en alerte renforcée sur le réseau de VNF")
+    ligne1[2].write(f"# {indic_annee_courante['dept_vnf_ar_code']}")
+    liste_dept = ''
+    if indic_annee_courante['dept_vnf_ar_code'] >0:
+        liste_dept = f": {indic_annee_courante['dept_vnf_ar_nom']}"
+    ligne1[2].write(f"départements en alerte renforcée sur le réseau de VNF {liste_dept}")
 
     # 2e ligne
     indic_mois_prec = table_indic.loc['mois_precedent']
-    ligne2[0].write(f"{indic_annee_courante['dept_fr'] - indic_mois_prec['dept_fr']} \ndépartements en arrêté par rapport au mois dernier")
-    ligne2[1].write(f"{indic_annee_courante['dept_vnf_crise_code'] - indic_mois_prec['dept_vnf_crise_code']}\
-                    \ndépartements en arrêté par rapport au mois dernier")
-    ligne2[2].write(f"{indic_annee_courante['dept_vnf_ar'] - indic_mois_prec['dept_vnf_ar']}\
-                    \ndépartements en arrêté par rapport au mois dernier")
+
+    diff_indic_mois = indic_annee_courante['dept_fr'] - indic_mois_prec['dept_fr']
+    signe=_signe_devant(diff_indic_mois)
+    if signe == '':
+        ligne2[0].write( "nombre de départements identique par rapport au mois dernier")
+    else:
+        ligne2[0].write(f"# {signe}{abs(diff_indic_mois)}")
+        ligne2[0].write( "départements en arrêté par rapport au mois dernier")
+
+    diff_indic_mois = indic_annee_courante['dept_vnf_crise_code'] - indic_mois_prec['dept_vnf_crise_code']
+    signe=_signe_devant(diff_indic_mois)
+    if signe == '':
+        ligne2[1].write( "nombre de départements identique par rapport au mois dernier")
+    else:
+        ligne2[1].write(f"# {signe}{abs(diff_indic_mois)}")
+        ligne2[1].write("départements en arrêté par rapport au mois dernier")
+
+    diff_indic_mois = indic_annee_courante['dept_vnf_ar_code'] - indic_mois_prec['dept_vnf_ar_code']
+    signe=_signe_devant(diff_indic_mois)
+    if signe == '':
+        ligne2[2].write( "nombre de départements identique par rapport au mois dernier")
+    else:
+        ligne2[2].write(f"# {signe}{abs(diff_indic_mois)}")
+        ligne2[2].write("départements en arrêté par rapport au mois dernier")
 
 
 #-------------------------------------------------------------------------------
@@ -604,18 +656,20 @@ def main():
 
     # création de la carte
     data_load_state.text('Construction carte...')
-    carte = construire_carte(itineraire, zones_arretes)
+    carte = construire_carte(itineraire, zones_arretes, dept_iti)
     data_load_state.text('Construction carte...Terminé !')
 
     # visualisation
     with tab1:
         st_folium(carte,
-            height=700,
-            width=700,
-        )
+                  returned_objects=[], # pour éviter les appels répétés à l'appli
+                  height=700,
+                  width=700,
+                  )
     # insertion des indicateurs par département
     with tab2:
         inserer_indic_dept(table_indic)
+        data_load_state.text('')
 
 #-------------------------------------------------------------------------------
 
