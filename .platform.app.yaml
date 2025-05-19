@@ -1,0 +1,34 @@
+# The name of the app. Must be unique within a project.
+name: app_streamlit_test
+
+# The type of the application to build
+type: 'python:3.12'
+
+# The size of the persistent disk of the application (in MB)
+disk: 1024
+
+# Your app's configuration when it's exposed to the web.
+web:
+    commands:
+        start: streamlit run $PLATFORM_APP_DIR/app.py --server.port $PORT --server.address 0.0.0.0
+    upstream:
+        socket_family: tcp
+        protocol: http
+    locations:
+        "/":
+            passthru: true
+
+# Set a local read/write mount for logs.
+mounts:
+    "logs":
+        source: local
+        source_path: logs
+
+# The hooks executed at various points in the lifecycle of the application.
+hooks:
+    build: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        
+        mkdir logs
+        rm -rf logs
