@@ -647,12 +647,18 @@ def main():
     zones_arretes = zones_arretes.to_crs(itineraire.crs)
 
     # arrêtés archivés dans le temps
-    df_arretes = get_arretes()
+    try:
+        df_arretes = get_arretes()
+    except Exception as e:
+        print(e)
+        data_load_state.text('Echec du téléchargement des données des arrêtés')
+        df_arretes = pd.DataFrame()
 
     data_load_state.text('Chargement des données...Terminé !')
 
     # construction de la table des indicateurs à afficher
-    table_indic = construire_table_indic(df_arretes, zones_arretes, dept_iti)
+    if not df_arretes.empty:
+        table_indic = construire_table_indic(df_arretes, zones_arretes, dept_iti)
 
     # création de la carte
     data_load_state.text('Construction carte...')
@@ -668,8 +674,12 @@ def main():
                   )
     # insertion des indicateurs par département
     with tab2:
-        inserer_indic_dept(table_indic)
-        data_load_state.text('')
+        if not df_arretes.empty:
+            inserer_indic_dept(table_indic)
+            data_load_state.text('')
+        else:
+            data_load_state.text('Echec du téléchargement des données des arrêtés')
+
 
 #-------------------------------------------------------------------------------
 
