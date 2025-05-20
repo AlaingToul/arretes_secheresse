@@ -667,14 +667,17 @@ def main():
 
     # visualisation
     with tab1:
+        data_load_state.text('Visualisation carte...')
         st_folium(carte,
                   returned_objects=[], # pour éviter les appels répétés à l'appli
                   height=700,
                   width=700,
                   )
+        data_load_state.text('Visualisation carte...Terminé !')
     # insertion des indicateurs par département
     with tab2:
         if not df_arretes.empty:
+            data_load_state.text('Visualisation indicateurs...')
             inserer_indic_dept(table_indic)
             data_load_state.text('')
         else:
