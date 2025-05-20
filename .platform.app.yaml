@@ -17,12 +17,18 @@ web:
     locations:
         "/":
             passthru: true
+            request_buffering:
+                enabled: false
 
 # Set a local read/write mount for logs.
 mounts:
     "logs":
         source: local
         source_path: logs
+
+    "/.cache":
+        source: local
+        source_path: cache
 
 # The hooks executed at various points in the lifecycle of the application.
 hooks:
