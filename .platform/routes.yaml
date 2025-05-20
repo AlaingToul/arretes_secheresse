@@ -1,5 +1,5 @@
 https://{default}/:
   type: upstream
-  upstream: "app:http"
+  upstream: "app_streamlit_test:http"
   cache:
       enabled: false
