@@ -16,7 +16,6 @@ web:
             cp -f $PLATFORM_APP_DIR/app.py $PLATFORM_APP_DIR/.cache/
             cp -rf $PLATFORM_APP_DIR/donnees $PLATFORM_APP_DIR/.cache/
             cd $PLATFORM_APP_DIR/.cache
-            pwd
             streamlit run ./app.py --server.port $PORT --server.address 0.0.0.0
     upstream:
         socket_family: tcp

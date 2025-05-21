@@ -11,6 +11,7 @@
 
 import io
 import os
+import sys
 import ast
 import json
 import datetime as dt
@@ -624,6 +625,8 @@ def inserer_indic_dept(table_indic):
 def main():
     """Fonction principale
     """
+    # test de l'environnement
+    print('**************** TEST ', sys.argv[0])
     # titre de page
     st.set_page_config(layout='centered',
                        page_title="Zones d'arrêtés sécheresse en vigueur")
