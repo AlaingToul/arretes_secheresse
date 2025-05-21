@@ -625,13 +625,12 @@ def inserer_indic_dept(table_indic):
 def main():
     """Fonction principale
     """
-    # test de l'environnement
-    print('**************** TEST ', sys.argv[0])
     # titre de page
     st.set_page_config(layout='centered',
                        page_title="Zones d'arrêtés sécheresse en vigueur")
     st.title("Arrêtés sécheresse en vigueur")
 
+    st.write(f'**************** TEST {sys.argv[0]}')
     tab1,tab2 = st.tabs(["Carte des arrêtés", "Indicateurs des arrêtés"])
     data_load_state = st.text('Chargement des données...')
 
