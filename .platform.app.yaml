@@ -21,7 +21,8 @@ web:
         socket_family: tcp
         protocol: http
     locations:
-        "/.cache":
+        "/":
+            root: $PLATFORM_APP_DIR/.cache
             passthru: true
 
 mounts:
