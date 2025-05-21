@@ -630,7 +630,7 @@ def main():
                        page_title="Zones d'arrêtés sécheresse en vigueur")
     st.title("Arrêtés sécheresse en vigueur")
 
-    st.write(f'**************** TEST {sys.argv[0]}')
+    st.write(f'**************** TEST {os.getcwd()}/{sys.argv[0]}')
     tab1,tab2 = st.tabs(["Carte des arrêtés", "Indicateurs des arrêtés"])
     data_load_state = st.text('Chargement des données...')
 
