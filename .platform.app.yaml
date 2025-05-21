@@ -23,7 +23,7 @@ mounts:
     "logs":
         source: local
         source_path: logs
-    "/.streamlit":
+    "/.cache":
         source: local
         source_path: .streamlit
 
@@ -35,3 +35,4 @@ hooks:
         pip install -r requirements.txt
         mkdir logs
         rm -rf logs
+        cp -r .streamlit .cache
