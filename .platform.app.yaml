@@ -22,7 +22,7 @@ web:
         protocol: http
     locations:
         "/":
-            root: $PLATFORM_APP_DIR/.cache
+            root: '/app/.cache'
             passthru: true
 
 mounts:
