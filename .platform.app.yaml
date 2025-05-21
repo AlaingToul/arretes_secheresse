@@ -17,24 +17,21 @@ web:
     locations:
         "/":
             passthru: true
-            request_buffering:
-                enabled: false
 
-# Set a local read/write mount for logs.
 mounts:
+    # Set a local read/write mount for logs.
     "logs":
         source: local
         source_path: logs
-
-    "/.cache":
+    "/.streamlit":
         source: local
-        source_path: cache
+        source_path: .streamlit
 
 # The hooks executed at various points in the lifecycle of the application.
 hooks:
     build: |
+        set -e
         pip install --upgrade pip
         pip install -r requirements.txt
-
         mkdir logs
         rm -rf logs
