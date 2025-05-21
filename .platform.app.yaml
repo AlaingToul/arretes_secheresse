@@ -14,7 +14,8 @@ web:
             set -e
             cp -r .streamlit/* .cache/
             cp -f $PLATFORM_APP_DIR/app.py $PLATFORM_APP_DIR/.cache/
-            streamlit run $PLATFORM_APP_DIR/.cache/app.py --server.port $PORT --server.address 0.0.0.0
+            cd $PLATFORM_APP_DIR/.cache
+            streamlit run app.py --server.port $PORT --server.address 0.0.0.0
     upstream:
         socket_family: tcp
         protocol: http
