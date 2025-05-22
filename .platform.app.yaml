@@ -47,4 +47,4 @@ hooks:
         pip install -r requirements.txt
         rm -rf logs
         rm -rf .cache
-        mv -r .streamlit .streamlit_git
+        mv .streamlit .streamlit_git
