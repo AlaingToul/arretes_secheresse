@@ -12,7 +12,7 @@ web:
     commands:
         start: |
             set -e
-            cp -r .streamlit/* .cache/
+            cp -r .streamlit_git/* .cache/
             cp -f $PLATFORM_APP_DIR/app.py $PLATFORM_APP_DIR/.cache/
             cp -rf $PLATFORM_APP_DIR/donnees $PLATFORM_APP_DIR/.cache/
             cd $PLATFORM_APP_DIR/.cache
@@ -35,6 +35,9 @@ mounts:
     "/.cache":
         source: local
         source_path: .cache
+    "/.streamlit":
+        source: local
+        source_path: .streamlit
 
 # The hooks executed at various points in the lifecycle of the application.
 hooks:
@@ -42,6 +45,6 @@ hooks:
         set -e
         pip install --upgrade pip
         pip install -r requirements.txt
-        mkdir logs
         rm -rf logs
         rm -rf .cache
+        mv -r .streamlit .streamlit_git
