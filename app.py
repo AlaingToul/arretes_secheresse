@@ -496,7 +496,7 @@ def construire_table_indic(df_arretes, zones_arretes, dept_iti):
     nb_dept_r_z = calculer_dept_zone_restrict(zones_arretes)
     # nombre de départements du réseau VNF en crise et alerte renforcée
     nb_dept_vnf_crise = calculer_dept_zone_vnf_niveau(zones_arretes, dept_iti, 'crise')
-    nb_dept_vnf_ar = calculer_dept_zone_vnf_niveau(zones_arretes, dept_iti, 'alerte renforcee')
+    nb_dept_vnf_ar = calculer_dept_zone_vnf_niveau(zones_arretes, dept_iti, 'alerte_renforcee')
 
     # ajout au résultat
     df_resultat.loc['annee_courante'] = [nb_dept_r_z,
@@ -522,11 +522,11 @@ def construire_table_indic(df_arretes, zones_arretes, dept_iti):
     # 1er jour du mois précédent (on fixe day=1 et on retranche 1 mois)
     date_compar = dt.date.today() + dateutil.relativedelta.relativedelta(months=-1, day=1)
     # recherche sur tous les niveaux sauf vigilance
-    niveaux = ["vigilance","alerte",  "alerte renforcée", "crise"]
+    niveaux = ["vigilance","alerte",  "alerte_renforcee", "crise"]
     nb_dept_r_z_mois_prec = calculer_dept_arretes_date(df_arretes, date_compar.isoformat(), niveaux)
     niveaux = ["crise"]
     nb_dept_vnf_crise_mois_prec = calculer_dept_arretes_date(df_arretes, date_compar.isoformat(), niveaux)
-    niveaux = ["alerte renforcée"]
+    niveaux = ["alerte_renforcee"]
     nb_dept_vnf_ar_mois_prec = calculer_dept_arretes_date(df_arretes, date_compar.isoformat(), niveaux)
 
     # ajout au résultat
