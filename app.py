@@ -59,6 +59,8 @@ def get_zones_secheresse():
     zones_arretes = zones_arretes.where(zones_arretes["insee_dept"].apply(lambda x:len(x)<3))
     zones_arretes = zones_arretes.dropna(axis=0, subset='insee_dept')
 
+    # ajout de l'information du lien vers l'arrêté en fichier pdf
+    zones_arretes['chemin_fichier'] = zones_arretes['arreteRestriction'].apply(lambda x: json.loads(x)['fichier'])
     # fin
     return zones_arretes
 
@@ -243,7 +245,9 @@ def construire_carte(itineraire, zones_arrete, dept_iti):
     # codes couleur des zones d'arrêtés selon le niveau de gravité
     niveaux  = ["vigilance", "alerte",  "alerte renforcée", "crise"]
     couleurs = ["#ffeda0",   "#feb24c", "#fc4e2a",          "#b10026"]
-    czones_arrete["couleur"] = czones_arrete["niveauGravite"].map(dict(zip(niveaux,couleurs)))
+    # assignation avec l'intermédiaire des codes de niveau
+    codes_niveau = ["vigilance", "alerte",  "alerte_renforcee", "crise"]
+    czones_arrete["couleur"] = czones_arrete["niveauGravite"].map(dict(zip(codes_niveau,couleurs)))
 
     # carte centrée sur ce point choisi manuellement
     centre = [46.463,2.661]
@@ -267,10 +271,10 @@ def construire_carte(itineraire, zones_arrete, dept_iti):
     # ajout des zones d'arrêté avec contrôle de la légende
     czones_arrete.explore(m=carte,
         column='niveauGravite',
-        tooltip=['niveauGravite', 'departement'],
+        tooltip=['niveauGravite', 'departement','chemin_fichier'],
         categorical=True,
-        categories=niveaux,
-        k=len(niveaux),
+        categories=codes_niveau,
+        k=len(codes_niveau),
         cmap=couleurs,
         popup=True,
         legend=False,
