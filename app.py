@@ -271,7 +271,7 @@ def construire_carte(itineraire, zones_arrete, dept_iti):
     # ajout des zones d'arrêté avec contrôle de la légende
     czones_arrete.explore(m=carte,
         column='niveauGravite',
-        tooltip=['niveauGravite', 'departement','chemin_fichier'],
+        tooltip=['niveauGravite', 'departement'],
         categorical=True,
         categories=codes_niveau,
         k=len(codes_niveau),
