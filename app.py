@@ -726,6 +726,11 @@ def inserer_indic_dept(table_indic):
         liste_dept = f"{indic_annee_courante['dept_vnf_crise_nom']}"
     ligne4[3].write(f":red-background[{liste_dept}]")
 
+#-------------------------------------------------------------------------------
+
+def change_etat(valeur):
+    """Change l'état de l'application en fonction de la valeur fournie."""
+    st.session_state.construire_carte = valeur
 
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
@@ -752,6 +757,12 @@ def main():
     """)
     # bouton de sélection du fichier à télécharger sur sidebar
     uploaded_file = st.sidebar.file_uploader("Choisir un fichier de carte des arrêtés", type=["zip"])
+
+    # bouton pour lancer le traitement des données chargées
+    # initialisation
+    if 'construire_carte' not in st.session_state:
+        st.session_state.construire_carte = None
+    st.sidebar.button("Afficher la carte", on_click=change_etat, args=[True])
 
     tab1,tab2 = st.tabs(["Carte des arrêtés", "Indicateurs des arrêtés"])
     data_load_state = st.text('Chargement des données...')
@@ -784,29 +795,31 @@ def main():
     if not df_arretes.empty:
         table_indic = construire_table_indic(df_arretes, zones_arretes, dept_iti)
 
-    # création de la carte
-    data_load_state.text('Construction carte...')
-    carte = construire_carte(itineraire, zones_arretes, dept_iti, uploaded_file)
-    data_load_state.text('Construction carte...Terminé !')
+    if st.session_state.construire_carte:
+        # création de la carte
+        data_load_state.text('Construction carte...')
+        carte = construire_carte(itineraire, zones_arretes, dept_iti, uploaded_file)
+        data_load_state.text('Construction carte...Terminé !')
 
-    # visualisation
-    with tab1:
-        data_load_state.text('Visualisation carte...')
-        st_folium(carte,
-                  returned_objects=[], # pour éviter les appels répétés à l'appli
-                  height=700,
-                  width=700,
-                  )
-        data_load_state.text('Visualisation carte...Terminé !')
-    # insertion des indicateurs par département
-    with tab2:
-        if not df_arretes.empty:
-            data_load_state.text('Visualisation indicateurs...')
-            inserer_indic_dept(table_indic)
-            data_load_state.text('')
-        else:
-            data_load_state.text('Echec du téléchargement des données des arrêtés')
-
+        # visualisation
+        with tab1:
+            data_load_state.text('Visualisation carte...')
+            st_folium(carte,
+                    returned_objects=[], # pour éviter les appels répétés à l'appli
+                    height=700,
+                    width=700,
+                    )
+            data_load_state.text('Visualisation carte...Terminé !')
+        # insertion des indicateurs par département
+        with tab2:
+            if not df_arretes.empty:
+                data_load_state.text('Visualisation indicateurs...')
+                inserer_indic_dept(table_indic)
+                data_load_state.text('')
+            else:
+                data_load_state.text('Echec du téléchargement des données des arrêtés')
+        # fin
+        st.session_state.construire_carte = False
 
 #-------------------------------------------------------------------------------
 
