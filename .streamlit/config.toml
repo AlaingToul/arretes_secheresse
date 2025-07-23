@@ -4,3 +4,9 @@ backgroundColor="#E0F2F1"
 secondaryBackgroundColor="#B2DFDB"
 textColor="#262730"
 font="sans serif"
+
+[server]
+# Max size, in megabytes, for files uploaded with the file_uploader.
+#
+# Default: 200
+maxUploadSize = 500

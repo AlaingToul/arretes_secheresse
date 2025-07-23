@@ -11,7 +11,6 @@
 
 import io
 import os
-import sys
 import ast
 import json
 import datetime as dt
@@ -32,25 +31,43 @@ Racine = "./donnees"
 
 #-------------------------------------------------------------------------------
 
-def get_zones_secheresse():
+def get_zones_secheresse(uploaded_file):
     """Requête de récupération des zones d'arrêté sécheresse.
     Renvoie uniquement les zones de type 'SUP' pour les eaux superficielles
+
+    Args:
+        uploaded_file: fichier GeoJSON ou ZIP contenant les données
 
     Returns:
         geoDataFrame: zones filtrées sur le type 'SUP'
     """
-    # URL stable de la couche
-    url_zones_arretes = "https://www.data.gouv.fr/fr/datasets/r/bfba7898-aed3-40ec-aa74-abb73b92a363"
+    # pour savoir si réunifier les tuiles
+    traiter_pmtiles = False
+    if uploaded_file is not None:
+        # lecture du fichier GeoJSON ou ZIP
+        st.sidebar.markdown(f"## Fichier à lire : {uploaded_file.name}")
+        zones_arretes = lire_geopandas(uploaded_file)
+    else:
+        # URL stable de la couche
+        #url_zones_arretes = "https://www.data.gouv.fr/fr/datasets/r/bfba7898-aed3-40ec-aa74-abb73b92a363"
+        # URL stable de la couche au format PMTiles
+        url_zones_arretes = "https://object.files.data.gouv.fr/hydra-pmtiles/hydra-pmtiles/bfba7898-aed3-40ec-aa74-abb73b92a363.pmtiles"
 
-    # requête du fichier
-    rep = requests.get(url_zones_arretes)
+        # requête du fichier
+        st.sidebar.markdown(f"## Requête auprès de : {url_zones_arretes}")
+        rep = requests.get(url_zones_arretes)
 
-    fio = io.BytesIO(rep.content)
-    # dans geopandas
-    zones_arretes = gpd.read_file(fio)
+        fio = io.BytesIO(rep.content)
+        # dans geopandas
+        zones_arretes = gpd.read_file(fio)
+        traiter_pmtiles = True
 
     # on ne garde que le type 'SUP'
     zones_arretes = zones_arretes[zones_arretes["type"] == "SUP"]
+
+    # pour le traitement des tuiles pmtiles : il faut fusionner les polygones par id
+    if traiter_pmtiles:
+        zones_arretes = zones_arretes.dissolve(by='id', aggfunc='first')
 
     # gestion du code de département des zones d'arrêtés
     zones_arretes['insee_dept'] = zones_arretes['departement'].apply(lambda x: json.loads(x)['code'])
@@ -227,13 +244,14 @@ def _categorical_legend(m, title, categories, colors):
 
 #-------------------------------------------------------------------------------
 
-def construire_carte(itineraire, zones_arrete, dept_iti):
+def construire_carte(itineraire, zones_arrete, dept_iti, uploaded_file):
     """construction de la carte folium basée sur les deux couches passées en paramètre
 
     Args:
         itineraire (GeoDataFrame): couche des itinéraires COP
         zones_arrete (GeoDataFrame): couche des zones de sécheresse à afficher
         dept_iti (GeoDataFrame): couche des départements en lien avec le réseau de VNF
+        uploaded_file (UploadedFile): fichier téléchargé contenant les données
 
     Returns:
         map: instance de carte folium
@@ -244,7 +262,7 @@ def construire_carte(itineraire, zones_arrete, dept_iti):
 
     # codes couleur des zones d'arrêtés selon le niveau de gravité
     niveaux  = ["vigilance", "alerte",  "alerte renforcée", "crise"]
-    couleurs = ["#ffeda0",   "#feb24c", "#fc4e2a",          "#b10026"]
+    couleurs = ["#ffeda0",   "#feb24c", "#fc4e2a", "#b10026"]
     # assignation avec l'intermédiaire des codes de niveau
     codes_niveau = ["vigilance", "alerte",  "alerte_renforcee", "crise"]
     czones_arrete["couleur"] = czones_arrete["niveauGravite"].map(dict(zip(codes_niveau,couleurs)))
@@ -253,10 +271,14 @@ def construire_carte(itineraire, zones_arrete, dept_iti):
     centre = [46.463,2.661]
     # limites : celle des itinéraires
     bounds =itineraire.total_bounds
+    attr = (
+        '&copy; OpenStreetMap France | &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    )
 
     carte = folium.Map(
         location=centre,
-        tiles="OpenStreetMap",
+        #attr=attr,
+        tiles= "OpenStreetMap", # "https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
     )
 
     carte.fit_bounds([[bounds[1],bounds[0]],
@@ -295,10 +317,18 @@ def construire_carte(itineraire, zones_arrete, dept_iti):
                   ).add_to(carte)
 
     # ajout du titre de la carte
-    title_html = f'''
-      <h3 align="center" style="font-size:20px"><b>Zones d'arrêtés sécheresse</b>
-      en date du {dt.date.today().strftime("%d/%m/%Y")}</h3>
-               '''
+    # la date est connue seulement si les données ont été téléchargées directement depuis le site, pas si c'est un fichier téléchargé
+    if uploaded_file is None:
+        title_html = f'''
+        <h3 align="center" style="font-size:20px"><b>Zones d'arrêtés sécheresse</b>
+        en date du {dt.date.today().strftime("%d/%m/%Y")}</h3>
+                '''
+    else:
+        title_html = '''
+        <h3 align="center" style="font-size:20px"><b>Zones d'arrêtés sécheresse</b>
+        </h3>
+                '''
+
     carte.get_root().html.add_child(folium.Element(title_html))
 
     # ajout du contrôle des couches
@@ -708,6 +738,21 @@ def main():
                        page_title="Zones d'arrêtés sécheresse en vigueur")
     st.title("Arrêtés sécheresse en vigueur")
 
+    # description de la fonctionnalité de téléchargement de la carte des arrêtés
+    st.sidebar.info("""
+    # L'application fonctionne de deux manières :
+
+    - visualisation de la carte des arrêtés en vigueur récupérés automatiquement.
+    - visualisation de la carte téléchargée au préalable manuellement.
+
+    Pour utiliser le deuxième mode de visualisation, télécharger un fichier de carte des arrêtés à partir du lien suivant :
+    [Télécharger la carte des arrêtés en vigueur](https://www.data.gouv.fr/api/1/datasets/r/bfba7898-aed3-40ec-aa74-abb73b92a363)
+
+    Penser ensuite à zipper le fichier avant de le charger dans l'appli avec le bouton ci-dessous.
+    """)
+    # bouton de sélection du fichier à télécharger sur sidebar
+    uploaded_file = st.sidebar.file_uploader("Choisir un fichier de carte des arrêtés", type=["zip"])
+
     tab1,tab2 = st.tabs(["Carte des arrêtés", "Indicateurs des arrêtés"])
     data_load_state = st.text('Chargement des données...')
 
@@ -721,7 +766,7 @@ def main():
     itineraire = itineraire.to_crs("EPSG:4326")
     dept_iti   = dept_iti.to_crs("EPSG:4326")
     # zones des arrêtés
-    zones_arretes = get_zones_secheresse()
+    zones_arretes = get_zones_secheresse(uploaded_file)
     # conversion dans le même CRS que l'itinéraire
     zones_arretes = zones_arretes.to_crs(itineraire.crs)
 
@@ -741,7 +786,7 @@ def main():
 
     # création de la carte
     data_load_state.text('Construction carte...')
-    carte = construire_carte(itineraire, zones_arretes, dept_iti)
+    carte = construire_carte(itineraire, zones_arretes, dept_iti, uploaded_file)
     data_load_state.text('Construction carte...Terminé !')
 
     # visualisation
